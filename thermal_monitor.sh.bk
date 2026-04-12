@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# --- KONFIGURASI SENSOR ---
+TEMP_PATH="/sys/class/hwmon/hwmon6/temp1_input"
+POWER_PATH="/sys/class/power_supply/BAT1/power_now" # Cek folder BAT1 atau BAT0
+STATUS_PATH="/sys/class/power_supply/ACAD/online"
+
+# --- AMBANG BATAS ---
+TEMP_THRESHOLD=75000  # 75°C
+WATT_THRESHOLD=15     # 15W
+INTERVAL=10           # Cek setiap 10 detik
+
+while true; do
+    # 1. Baca Status Power (0 = Battery, 1 = AC)
+    IS_AC=$(cat "$STATUS_PATH")
+    
+    # 2. Baca Suhu
+    CURRENT_TEMP=$(cat "$TEMP_PATH")
+    DISPLAY_TEMP=$((CURRENT_TEMP / 1000))
+
+    # 3. Logika Alert
+    if [ "$IS_AC" -eq 1 ]; then
+        # --- MODE AC ---
+        if [ "$CURRENT_TEMP" -gt "$TEMP_THRESHOLD" ]; then
+            notify-send -u critical -i dialog-warning "AC Thermal Alert" "Suhu tembus ${DISPLAY_TEMP}°C! Lid tertutup bisa berbahaya."
+        fi
+    else
+        # --- MODE BATTERY ---
+        # Baca wattase (power_now biasanya dalam mikrowatt)
+        RAW_WATT=$(cat "$POWER_PATH")
+        CURRENT_WATT=$(echo "scale=2; $RAW_WATT / 1000000" | bc)
+        
+        # Alert Suhu
+        if [ "$CURRENT_TEMP" -gt "$TEMP_THRESHOLD" ]; then
+            notify-send -u critical -i dialog-warning "Battery Thermal Alert" "Suhu: ${DISPLAY_TEMP}°C. Segera cari sirkulasi udara!"
+        fi
+        
+        # Alert Power (Hanya di Baterai)
+        if (( $(echo "$CURRENT_WATT > $WATT_THRESHOLD" | bc -l) )); then
+            notify-send -u normal -i battery-caution "Power Warning" "Penggunaan daya: ${CURRENT_WATT}W (Melebihi target 15W)."
+        fi
+    fi
+
+    sleep $INTERVAL
+done
